@@ -1,70 +1,125 @@
-# Getting Started with Create React App
+# Agent AI
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Agent AI is a document question-answering web application built with React, Node.js, LangChain, and the Model Context Protocol (MCP). Users upload PDF files, select a document, and ask questions by text or voice. Each question returns two answers side by side: one from the selected PDF (RAG) and one from a web search.
 
-## Available Scripts
+Each PDF is indexed once when it is uploaded. Later questions only run retrieval and answer generation, so the embeddings API is not called again for the same document.
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+- PDF upload with type and size validation
+- One-time indexing at upload, with embeddings saved to disk and restored after a restart
+- Document IDs, a document list, and document selection before asking
+- RAG answers from the selected PDF with OpenAI embeddings and an in-memory vector store
+- Web answers through an MCP server that wraps SerpAPI Google search
+- Parallel RAG and web search requests; if one fails or times out, the other answer is still shown
+- Voice input with the Web Speech API and spoken RAG answers with text-to-speech
+- Backend and frontend automated tests
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Tech Stack
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+| Area | Technology |
+| --- | --- |
+| Web UI | React 19, Ant Design 6, Axios |
+| Voice | react-speech-recognition, speak-tts |
+| Backend | Node.js, Express, Multer |
+| RAG | LangChain, OpenAI embeddings, MemoryVectorStore, GPT-5 |
+| Web search | MCP TypeScript SDK (stdio), SerpAPI |
+| Test | Jest, React Testing Library, Node.js test runner |
 
-### `npm test`
+## Project Structure
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+| Path | Responsibility |
+| --- | --- |
+| `src/App.js` | Holds the conversation, loading state, document list, and selected document. |
+| `src/api.js` | Sends upload, document list, and chat requests; turns request failures into answer errors. |
+| `src/components/PdfUploader.js` | Validates PDF files and uploads them. |
+| `src/components/DocumentSelector.js` | Lists uploaded documents and switches the selected one. |
+| `src/components/ChatComponent.js` | Handles text questions, Chat Mode, speech recognition, and text-to-speech. |
+| `src/components/RenderQA.js` | Shows each question with the RAG answer and web answer, or the error for each. |
+| `server/server.js` | Loads environment variables, creates the document store, and starts the server. |
+| `server/app.js` | Defines the Express routes, upload rules, timeouts, and error responses. |
+| `server/docStore.js` | Keeps document metadata and vector indexes, and restores them from disk. |
+| `server/chat.js` | Builds, saves, and restores the PDF index, and answers from retrieved chunks. |
+| `server/chat-mcp.js` | Starts the MCP client, calls `search_web`, and summarizes the results. |
+| `server/mcp-server.js` | MCP server that exposes SerpAPI search as the `search_web` tool. |
 
-### `npm run build`
+When a PDF is uploaded, the server loads the text, splits it into 500-character chunks, creates embeddings, and saves the index to `server/data/indexes/<id>.json`. The file itself is saved as `server/uploads/<id>.pdf`, so files with the same name do not overwrite each other.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+For each question, `/chat` runs the RAG answer and the web search answer with `Promise.allSettled`. Each task has a 60-second timeout. The response contains `ragAnswer`, `ragError`, `mcpAnswer`, and `mcpError`, and the frontend shows each answer or its error separately.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## API
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/documents` | List uploaded documents, newest first |
+| POST | `/upload` | Upload a PDF (`file` field), build its index, and return the document |
+| GET | `/chat?question=...&documentId=...` | Return the RAG answer and web search answer |
 
-### `npm run eject`
+`/chat` returns `400` when the question is empty, `404` when the document does not exist, and `502` when both answers fail. If only one answer fails, it returns `200` with the error in `ragError` or `mcpError`.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Run Locally
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Requirements:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+- Node.js 22 or later
+- OpenAI API key
+- SerpAPI key
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+Install dependencies:
 
-## Learn More
+```bash
+npm install
+cd server && npm install
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Create `server/.env`:
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+```
+OPENAI_API_KEY=your_openai_key
+SERPAPI_KEY=your_serpapi_key
+```
 
-### Code Splitting
+Start the frontend and backend together:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```bash
+npm run dev
+```
 
-### Analyzing the Bundle Size
+Open http://localhost:3000. In development, the React dev server forwards API requests to the backend on port 5001 through the `proxy` setting in `package.json`.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+## Configuration
 
-### Making a Progressive Web App
+| Variable | Where | Default | Description |
+| --- | --- | --- | --- |
+| `OPENAI_API_KEY` | `server/.env` | None | Used for embeddings and answers |
+| `SERPAPI_KEY` | `server/.env` | None | Used by the MCP search tool |
+| `PORT` | `server/.env` | `5001` | Backend port |
+| `REACT_APP_API_URL` | frontend environment | Dev proxy | Backend URL for the frontend; overrides the proxy |
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Uploaded files and saved indexes are stored in `server/uploads/` and `server/data/`. Both are ignored by Git.
 
-### Advanced Configuration
+## Test and Build
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+Run the frontend tests:
 
-### Deployment
+```bash
+CI=true npm test -- --watchAll=false
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+Run the backend tests:
 
-### `npm run build` fails to minify
+```bash
+cd server && npm test
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+The backend tests use fake index and answer functions, so they do not call OpenAI or SerpAPI.
+
+Build the frontend:
+
+```bash
+npm run build
+```
+
+## Current Scope
+
+This is a local proof of concept. Documents cannot be deleted from the UI, conversations are only kept in the browser, and answers do not include PDF page numbers or web links. The API has no authentication or per-user isolation. Voice input and text-to-speech depend on browser support and microphone permission.
