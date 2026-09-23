@@ -38,29 +38,47 @@ const answerLabel = {
   marginBottom: "5px",
 };
 
-const ragAnswerStyle = {
+const bubbleStyle = {
   maxWidth: "50%",
   textAlign: "left",
-  backgroundColor: "#E6F7FF",
   color: "black",
   display: "inline-block",
   borderRadius: "10px",
   padding: "10px",
   marginBottom: "5px",
+};
+
+const ragAnswerStyle = {
+  ...bubbleStyle,
+  backgroundColor: "#E6F7FF",
   borderLeft: "4px solid #1890FF",
 };
 
 const mcpAnswerStyle = {
-  maxWidth: "50%",
-  textAlign: "left",
+  ...bubbleStyle,
   backgroundColor: "#F6FFED",
-  color: "black",
-  display: "inline-block",
-  borderRadius: "10px",
-  padding: "10px",
-  marginBottom: "5px",
   borderLeft: "4px solid #52C41A",
 };
+
+const errorStyle = {
+  ...bubbleStyle,
+  backgroundColor: "#FFF2F0",
+  borderLeft: "4px solid #FF4D4F",
+  color: "#A8071A",
+};
+
+const AnswerBlock = ({ label, text, error, style }) => (
+  <div style={answerContainer}>
+    <div style={answerLabel}>{label}</div>
+    {error ? (
+      <div style={errorStyle} role="alert">
+        Failed: {error}
+      </div>
+    ) : (
+      <div style={style}>{text}</div>
+    )}
+  </div>
+);
 
 const RenderQA = (props) => {
   const { conversation, isLoading } = props;
@@ -68,22 +86,28 @@ const RenderQA = (props) => {
   return (
     <>
       {conversation?.map((each, index) => {
+        const { answer = {} } = each;
+        const docLabel = each.documentName
+          ? `RAG Answer (from ${each.documentName}):`
+          : "RAG Answer (from document):";
         return (
           <div key={index} style={containerStyle}>
             <div style={userContainer}>
               <div style={userStyle}>{each.question}</div>
             </div>
             <div style={agentContainer}>
-              <div>
-                <div style={answerContainer}>
-                  <div style={answerLabel}>RAG Answer (from document):</div>
-                  <div style={ragAnswerStyle}>{each.answer.ragAnswer}</div>
-                </div>
-                <div style={answerContainer}>
-                  <div style={answerLabel}>MCP Answer (with web search):</div>
-                  <div style={mcpAnswerStyle}>{each.answer.mcpAnswer}</div>
-                </div>
-              </div>
+              <AnswerBlock
+                label={docLabel}
+                text={answer.ragAnswer}
+                error={answer.ragError}
+                style={ragAnswerStyle}
+              />
+              <AnswerBlock
+                label="MCP Answer (with web search):"
+                text={answer.mcpAnswer}
+                error={answer.mcpError}
+                style={mcpAnswerStyle}
+              />
             </div>
           </div>
         );
@@ -94,4 +118,3 @@ const RenderQA = (props) => {
 };
 
 export default RenderQA;
-

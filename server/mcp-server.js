@@ -53,6 +53,7 @@ server.registerTool(
             text: `Error performing web search: ${error.message}`,
           },
         ],
+        isError: true,
       };
     }
   }

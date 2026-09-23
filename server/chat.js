@@ -1,50 +1,14 @@
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { OpenAIEmbeddings } from "@langchain/openai";
+import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
 import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
-import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
+import { Document } from "@langchain/core/documents";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 
-// NOTE: change this default filePath to any of your default file name
-const chat = async (filePath = "./uploads/hbs-lean-startup.pdf", query) => {
-  // Get API key from environment
-  const apiKey = process.env.OPENAI_API_KEY;
+const CHUNK_SIZE = 500;
+const CHUNK_OVERLAP = 0;
 
-  // step 1:
-  const loader = new PDFLoader(filePath);
-
-  const data = await loader.load();
-
-  // step 2:
-  const textSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 500, //  (in terms of number of characters)
-    chunkOverlap: 0,
-  });
-
-  const splitDocs = await textSplitter.splitDocuments(data);
-
-  // step 3
-
-  const embeddings = new OpenAIEmbeddings(apiKey ? { apiKey } : {});
-
-  const vectorStore = await MemoryVectorStore.fromDocuments(
-    splitDocs,
-    embeddings
-  );
-
-  // step 4: retrieval
-
-  // const relevantDocs = await vectorStore.similaritySearch(
-  // "What is task decomposition?"
-  // );
-
-  // step 5: qa w/ customize the prompt
-  const model = new ChatOpenAI({
-    model: "gpt-5",
-    ...(apiKey && { apiKey }),
-  });
-
-  const template = `Use the following pieces of context to answer the question at the end.
+const template = `Use the following pieces of context to answer the question at the end.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
 Use three sentences maximum and keep the answer as concise as possible.
 
@@ -52,25 +16,71 @@ Use three sentences maximum and keep the answer as concise as possible.
 Question: {question}
 Helpful Answer:`;
 
-  const prompt = PromptTemplate.fromTemplate(template);
+const prompt = PromptTemplate.fromTemplate(template);
 
-  // Use retriever to get relevant documents
+// Create clients lazily so that importing this module does not require an API key.
+const createEmbeddings = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  return new OpenAIEmbeddings(apiKey ? { apiKey } : {});
+};
+
+const createModel = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  return new ChatOpenAI({ model: "gpt-5", ...(apiKey && { apiKey }) });
+};
+
+// Called once when a PDF is uploaded: load -> split -> embed -> in-memory index.
+export const buildIndex = async (filePath) => {
+  const loader = new PDFLoader(filePath);
+  const data = await loader.load();
+
+  const textSplitter = new RecursiveCharacterTextSplitter({
+    chunkSize: CHUNK_SIZE,
+    chunkOverlap: CHUNK_OVERLAP,
+  });
+  const splitDocs = await textSplitter.splitDocuments(data);
+  if (splitDocs.length === 0) {
+    throw new Error("No text could be extracted from this PDF");
+  }
+
+  const vectorStore = await MemoryVectorStore.fromDocuments(
+    splitDocs,
+    createEmbeddings()
+  );
+
+  return { vectorStore, chunkCount: splitDocs.length };
+};
+
+// Convert the index into plain JSON so it can be written to disk.
+export const serializeIndex = ({ vectorStore, chunkCount }) => ({
+  chunkCount,
+  vectors: vectorStore.memoryVectors.map(({ content, embedding, metadata }) => ({
+    content,
+    embedding,
+    metadata,
+  })),
+});
+
+// Rebuild the vector store from saved embeddings without calling the embeddings API again.
+export const restoreIndex = async ({ chunkCount, vectors }) => {
+  const vectorStore = new MemoryVectorStore(createEmbeddings());
+  await vectorStore.addVectors(
+    vectors.map((v) => v.embedding),
+    vectors.map(
+      (v) => new Document({ pageContent: v.content, metadata: v.metadata })
+    )
+  );
+  return { vectorStore, chunkCount };
+};
+
+// Called for every question: only retrieval + LLM, no re-indexing.
+export const answerFromIndex = async ({ vectorStore }, query) => {
   const retriever = vectorStore.asRetriever();
   const relevantDocs = await retriever.invoke(query);
-
-  // Format context from retrieved documents
   const context = relevantDocs.map((doc) => doc.pageContent).join("\n\n");
 
-  // Create a simple chain using the prompt template
-  const formattedPrompt = await prompt.format({
-    context,
-    question: query,
-  });
-
-  // Get response from the model
-  const response = await model.invoke(formattedPrompt);
+  const formattedPrompt = await prompt.format({ context, question: query });
+  const response = await createModel().invoke(formattedPrompt);
 
   return { text: response.content };
 };
-
-export default chat;

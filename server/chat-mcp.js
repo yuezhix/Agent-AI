@@ -76,6 +76,11 @@ const chatMCP = async (query) => {
       },
     });
 
+    if (toolResult.isError) {
+      // Search failed: report it as an error instead of asking the model to summarize the error text.
+      throw new Error(toolResult.content?.[0]?.text || "Web search failed");
+    }
+
     let searchResults = "";
 
     if (toolResult.content && toolResult.content.length > 0) {

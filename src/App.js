@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import PdfUploader from "./components/PdfUploader";
+import DocumentSelector from "./components/DocumentSelector";
 import ChatComponent from "./components/ChatComponent";
 import RenderQA from "./components/RenderQA";
 import { Layout, Typography } from "antd";
+import { fetchDocuments } from "./api";
 
 const chatComponentStyle = {
   position: "fixed",
@@ -17,6 +19,10 @@ const pdfUploaderStyle = {
   paddingTop: "80px",
 };
 
+const documentSelectorStyle = {
+  marginTop: "16px",
+};
+
 const renderQAStyle = {
   height: "50%", // adjust the height as you see fit
   overflowY: "auto",
@@ -25,11 +31,36 @@ const renderQAStyle = {
 const App = () => {
   const [conversation, setConversation] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [selectedDocId, setSelectedDocId] = useState(null);
   const { Header, Content } = Layout;
   const { Title } = Typography;
 
+  // Load documents that were uploaded (and indexed) before.
+  useEffect(() => {
+    let cancelled = false;
+    fetchDocuments()
+      .then((docs) => {
+        if (cancelled) return;
+        setDocuments(docs);
+        setSelectedDocId((prev) => prev ?? docs[0]?.id ?? null);
+      })
+      .catch((error) => console.error("Failed to load documents:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleUploaded = (doc) => {
+    setDocuments((prev) => [doc, ...prev.filter((d) => d.id !== doc.id)]);
+    setSelectedDocId(doc.id);
+  };
+
   const handleResp = (question, answer) => {
-     setConversation((prev) => [...prev, { question, answer }]);
+    setConversation((prev) => [
+      ...prev,
+      { question, answer, documentName: answer?.documentName },
+    ]);
   };
 
   return (
@@ -45,10 +76,16 @@ const App = () => {
         </Header>
         <Content style={{ width: "80%", margin: "auto" }}>
           <div style={pdfUploaderStyle}>
-            <PdfUploader />
+            <PdfUploader onUploaded={handleUploaded} />
+          </div>
+          <div style={documentSelectorStyle}>
+            <DocumentSelector
+              documents={documents}
+              selectedDocId={selectedDocId}
+              onChange={setSelectedDocId}
+            />
           </div>
 
-          <br />
           <br />
           <div style={renderQAStyle}>
             <RenderQA conversation={conversation} isLoading={isLoading} />
@@ -62,6 +99,7 @@ const App = () => {
             handleResp={handleResp}
             isLoading={isLoading}
             setIsLoading={setIsLoading}
+            documentId={selectedDocId}
           />
         </div>
       </Layout>
@@ -70,4 +108,3 @@ const App = () => {
 };
 
 export default App;
-

@@ -1,73 +1,54 @@
 import React from "react";
-import axios from "axios"; // Import axios for HTTP requests
 import { InboxOutlined } from "@ant-design/icons";
 import { message, Upload } from "antd";
+import { uploadDocument, getErrorMessage } from "../api";
 
 const { Dragger } = Upload;
 
-const DOMAIN = "http://localhost:5001";
+const isPdf = (file) =>
+  file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 
-const uploadToBackend = async (file) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  try {
-    const response = await axios.post(`${DOMAIN}/upload`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-    return response;
-  } catch (error) {
-    console.error("Error uploading file: ", error);
-    return null;
-  }
-};
+const PdfUploader = ({ onUploaded }) => {
+  const beforeUpload = (file) => {
+    if (!isPdf(file)) {
+      message.error(`${file.name} is not a PDF file.`);
+      return Upload.LIST_IGNORE;
+    }
+    return true;
+  };
 
-const attributes = {
-  name: "file",
-  multiple: true,
-  customRequest: async ({ file, onSuccess, onError }) => {
-    const response = await uploadToBackend(file);
-    if (response && response.status === 200) {
-      // Handle success
-      onSuccess(response.data);
-    } else {
-      // Handle error
-      onError(new Error("Upload failed"));
+  const customRequest = async ({ file, onSuccess, onError }) => {
+    try {
+      const doc = await uploadDocument(file);
+      onSuccess(doc);
+      message.success(`${doc.name} uploaded and indexed (${doc.chunkCount} chunks).`);
+      onUploaded?.(doc);
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      onError(new Error(errorMessage));
+      message.error(`${file.name} upload failed: ${errorMessage}`);
     }
-  },
-  onChange(info) {
-    const { status } = info.file;
-    if (status !== "uploading") {
-      console.log(info.file, info.fileList);
-    }
-    if (status === "done") {
-      message.success(`${info.file.name} file uploaded successfully.`);
-    } else if (status === "error") {
-      message.error(`${info.file.name} file upload failed.`);
-    }
-  },
-  onDrop(e) {
-    console.log("Dropped files", e.dataTransfer.files);
-  },
-};
+  };
 
-const PdfUploader = () => {
   return (
-    <Dragger {...attributes}>
+    <Dragger
+      name="file"
+      multiple
+      accept=".pdf,application/pdf"
+      beforeUpload={beforeUpload}
+      customRequest={customRequest}
+    >
       <p className="ant-upload-drag-icon">
         <InboxOutlined />
       </p>
-      <p className="ant-upload-text">
-        Click or drag file to this area to upload
-      </p>
+      <p className="ant-upload-text">Click or drag PDF files to this area to upload</p>
       <p className="ant-upload-hint">
-        Support for a single or bulk upload. Strictly prohibited from uploading
-        company data or other banned files.
+        Each PDF is indexed once when uploaded, then can be selected below for
+        questions. Strictly prohibited from uploading company data or other
+        banned files.
       </p>
     </Dragger>
   );
 };
 
 export default PdfUploader;
-

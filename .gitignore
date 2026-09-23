@@ -26,6 +26,7 @@ yarn-error.log*
 
 # local-only files
 server/uploads/*
+server/data/
 !server/uploads/.gitkeep
 outputs/
 .vscode/
