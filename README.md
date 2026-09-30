@@ -124,7 +124,3 @@ The backend tests use fake index and answer functions, so they do not call OpenA
 | `REACT_APP_API_URL` | frontend environment | Backend URL; overrides the development proxy |
 
 `server/.env` and all other `.env` files are ignored by Git. Uploaded files and saved indexes in `server/uploads/` and `server/data/` are ignored as well.
-
-## Current Scope
-
-This is a learning project that runs locally. Documents cannot be deleted from the UI yet, conversation history stays in the browser and is not sent to the backend, and answers do not include PDF page numbers or web links. The web search prompt summarizes the search results without the original question, so web answers can be general. The API has no authentication or per-user isolation, and CORS allows all origins.
